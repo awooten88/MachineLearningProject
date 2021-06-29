@@ -1,0 +1,86 @@
+---
+title: "Machine Learning Project"
+author: "Alicia Wooten"
+date: "6/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Executive Summary
+Our goal for the study is to select a machine learning algorithm to predict the manner in which an exercise is done.  By using a random forest algorithm, we can predict how an exercise is done with around 99% accuracy.
+
+## Background
+In this study, we are interested in the rarely quantified question: how well is a particular exercise activity done?  The data were taken from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  More information on the original study and data is available from the website here: <http://groupware.les.inf.puc-rio.br/har>.  
+
+## Data Cleaning
+The first step in the process is to clean the data.  This dataset has a lot of missing and unnecessary data, so we will remove any columns we do not need and any with more than half of the data missing.  This leaves us with 52 possible predictors.  
+```{r cleaning}
+# Load packages
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(rattle)
+library(randomForest)
+
+#load data and set seed
+mydata<-read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),na.strings=c("","NA"))
+set.seed(17)
+
+# remove unnecessary meta data
+mydata<-mydata[,-c(1:7)]
+# Remove columns with large amounts of missing data (more than half)
+mydata<-mydata[,colSums(is.na(mydata))<.5*19622]
+```
+
+## Model Building
+Now we can begin to build some models.  First, we need to separate out our testing data which we will only use after selecting a final model.  Furthermore, we need to separate the remaining data into a training set and a validation set.  We will use the training set to build all of our potential models, then we will use these models to predict on the validation set.  
+The three model algorithms we will try are decision tree, random forest, and gradient boosted trees.
+```{r building}
+# Split the data into training and testing sets
+intrain<-createDataPartition(mydata$classe, p = .9, list = FALSE)
+training<-mydata[intrain,]
+testing<-mydata[-intrain,]
+# Split the training set into subtraining and validation sets
+insubtrain<-createDataPartition(training$classe, p = .8, list = FALSE)
+subtraining<-training[insubtrain,]
+validation<-training[-insubtrain,]
+
+# Decision Tree
+rpartModel<-train(classe ~., data = subtraining, method = "rpart")
+rpartPred<-predict(rpartModel, validation)
+confusionMatrix(rpartPred, validation$classe)
+
+
+# Random Forest
+RFModel<-randomForest(formula = classe ~ ., data = subtraining)
+RFPred<-predict(RFModel, validation)
+confusionMatrix(RFPred, validation$classe)
+
+# Gradient Boosted Trees
+GBModel<-train(classe~., data = subtraining, method = "gbm", verbose = FALSE)
+GBPred<-predict(GBModel, validation)
+confusionMatrix(GBPred, validation$classe)
+```
+
+## Model Selection
+To select our final model, we will compare the accuracy of all three options.  
+```{r selection, results="asis"}
+rpartAcc<-length(which(rpartPred==validation$classe))/nrow(validation)
+RFAcc<-length(which(RFPred==validation$classe))/nrow(validation)
+GBAcc<-length(which(GBPred==validation$classe))/nrow(validation)
+Accuracy<-data.frame("Decision Tree" = rpartAcc, "Random Forest" = RFAcc, "Gradient Boosted Trees" = GBAcc)
+knitr::kable(Accuracy, caption = "Accuracy Table")
+```
+We can see that the random forest model is the most accurate, so we will select it as our final model.  To get a sense of the out of sample error for our model, we will now apply the model to the testing data that we reserved.  
+Since the testing data is a new data set, the error that we see here is a good estimate of what the true out of sample error might be.
+```{r test}
+# Test
+FinalPred<-predict(RFModel,testing)
+confusionMatrix(FinalPred, testing$classe)
+```
+
+## Conclusion
+Through the use of a random forest algorithm, we are able to predict how well a particular exercise activity done.  The out of sample error rate for our prediction is approximately 0.31%.
